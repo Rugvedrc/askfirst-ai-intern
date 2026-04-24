@@ -32,7 +32,7 @@ The app ships with a synthetic 3-user dataset covering ~3 months of health conve
 | User | ID | Profile |
 |---|---|---|
 | Arjun | USR001 | Software engineer, stress & deadline-driven symptoms |
-| Meera | USR002 | Teacher, hormonal & dietary patterns |
+| Meera | USR002 | Marketing executive, hormonal & dietary patterns |
 | Priya | USR003 | Student, sleep-deprivation & cycle-linked symptoms |
 
 ---
