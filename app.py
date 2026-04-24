@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = "gpt-4o"
+CHAT_TEMPERATURE = 0.4
 
 with open("askfirst_synthetic_dataset.json", "r") as f:
     dataset = json.load(f)
@@ -163,7 +164,7 @@ tab_chat, tab_patterns = st.tabs(["💬 Chat with Clary", "🔍 Pattern Analysis
 CHAT_SYSTEM_PROMPT = """You are Clary, a compassionate and knowledgeable health clarity assistant for Ask First.
 
 You have access to the user's full health conversation history below. Use it to give
-personalised, context-aware answers. When relevant, reason about timing, triggers, and
+personalized, context-aware answers. When relevant, reason about timing, triggers, and
 patterns across sessions. Speak in a warm, clear, non-alarmist tone.
 
 {context}"""
@@ -199,11 +200,11 @@ with tab_chat:
                 with client.chat.completions.create(
                     model=MODEL,
                     messages=api_messages,
-                    temperature=0.4,
+                    temperature=CHAT_TEMPERATURE,
                     stream=True,
                 ) as stream:
                     for chunk in stream:
-                        delta = chunk.choices[0].delta.content
+                        delta = chunk.choices[0].delta.content if chunk.choices[0].delta else None
                         if delta:
                             full_reply += delta
                             response_placeholder.markdown(full_reply + "▌")
@@ -214,7 +215,7 @@ with tab_chat:
 
         st.session_state[history_key].append({"role": "assistant", "content": full_reply})
 
-    if st.session_state.get(history_key):
+    if history_key in st.session_state and st.session_state[history_key]:
         if st.button("🗑️ Clear chat", key="clear_chat"):
             st.session_state[history_key] = []
             st.rerun()
