@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = "gpt-4o"
+CHAT_TEMPERATURE = 0.4
 
 with open("askfirst_synthetic_dataset.json", "r") as f:
     dataset = json.load(f)
@@ -143,7 +144,7 @@ def confidence_badge(level: str) -> str:
 # --- Streamlit UI ---
 
 st.set_page_config(page_title="Ask First — Clary", layout="wide")
-st.title("🧠 Ask First — Clary Pattern Detection")
+st.title("🧠 Ask First — Clary")
 st.caption("Cross-conversation health pattern detection with temporal causal reasoning")
 
 user_map = {u["name"]: u for u in dataset["users"]}
@@ -156,32 +157,98 @@ col2.metric("Age / Gender", f"{user['age']} / {user['gender']}")
 col3.metric("Sessions", len(user["conversations"]))
 st.caption(f"**Onboarding notes:** {user['onboarding_notes']}")
 
-if st.button("🔍 Analyze Patterns", type="primary"):
-    st.subheader("Reasoning Trace (live stream)")
-    trace_box = st.empty()
-    status_box = st.empty()
+tab_chat, tab_patterns = st.tabs(["💬 Chat with Clary", "🔍 Pattern Analysis"])
 
-    patterns = run_analysis(user, trace_box, status_box)
+# ── Chat tab ──────────────────────────────────────────────────────────────────
 
-    if patterns:
-        st.success(f"✅ Found {len(patterns)} pattern(s)  |  Expected: 8  |  Coverage: {len(patterns)}/8")
-        for p in patterns:
-            with st.expander(f"{confidence_badge(p.get('confidence', ''))}  —  {p.get('title', 'Untitled')}"):
-                st.markdown(f"**Sessions involved:** `{', '.join(p.get('sessions_involved', []))}`")
-                st.markdown("**Temporal Reasoning**")
-                st.write(p.get("temporal_reasoning", ""))
-                st.markdown("**Reasoning Trace**")
-                st.write(p.get("reasoning_trace", ""))
-                st.info(f"**Confidence justification:** {p.get('confidence_justification', '')}")
+CHAT_SYSTEM_PROMPT = """You are Clary, a compassionate and knowledgeable health clarity assistant for Ask First.
 
-        with st.expander("📄 Raw JSON output"):
-            st.json(patterns)
+You have access to the user's full health conversation history below. Use it to give
+personalized, context-aware answers. When relevant, reason about timing, triggers, and
+patterns across sessions. Speak in a warm, clear, non-alarmist tone.
 
-        st.download_button(
-            "⬇️ Download patterns_output.json",
-            data=json.dumps(patterns, indent=2),
-            file_name="patterns_output.json",
-            mime="application/json"
-        )
-    else:
-        st.warning("No patterns extracted.")
+{context}"""
+
+with tab_chat:
+    # Session-state key includes the selected user so history resets on user change
+    history_key = f"chat_history_{selected_name}"
+    if history_key not in st.session_state:
+        st.session_state[history_key] = []
+
+    # Render existing messages
+    for msg in st.session_state[history_key]:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Chat input
+    user_input = st.chat_input("Ask Clary anything about your health…")
+    if user_input:
+        # Show and store user message
+        with st.chat_message("user"):
+            st.markdown(user_input)
+        st.session_state[history_key].append({"role": "user", "content": user_input})
+
+        # Build messages list for the API
+        system_content = CHAT_SYSTEM_PROMPT.format(context=build_user_context(user))
+        api_messages = [{"role": "system", "content": system_content}] + st.session_state[history_key]
+
+        # Stream the assistant response
+        with st.chat_message("assistant"):
+            response_placeholder = st.empty()
+            full_reply = ""
+            try:
+                with client.chat.completions.create(
+                    model=MODEL,
+                    messages=api_messages,
+                    temperature=CHAT_TEMPERATURE,
+                    stream=True,
+                ) as stream:
+                    for chunk in stream:
+                        delta = chunk.choices[0].delta.content if chunk.choices[0].delta else None
+                        if delta:
+                            full_reply += delta
+                            response_placeholder.markdown(full_reply + "▌")
+                response_placeholder.markdown(full_reply)
+            except Exception as e:
+                full_reply = f"⚠️ Sorry, something went wrong: {e}"
+                response_placeholder.markdown(full_reply)
+
+        st.session_state[history_key].append({"role": "assistant", "content": full_reply})
+
+    if history_key in st.session_state and st.session_state[history_key]:
+        if st.button("🗑️ Clear chat", key="clear_chat"):
+            st.session_state[history_key] = []
+            st.rerun()
+
+# ── Pattern Analysis tab ───────────────────────────────────────────────────────
+
+with tab_patterns:
+    if st.button("🔍 Analyze Patterns", type="primary"):
+        st.subheader("Reasoning Trace (live stream)")
+        trace_box = st.empty()
+        status_box = st.empty()
+
+        patterns = run_analysis(user, trace_box, status_box)
+
+        if patterns:
+            st.success(f"✅ Found {len(patterns)} pattern(s)  |  Expected: 8  |  Coverage: {len(patterns)}/8")
+            for p in patterns:
+                with st.expander(f"{confidence_badge(p.get('confidence', ''))}  —  {p.get('title', 'Untitled')}"):
+                    st.markdown(f"**Sessions involved:** `{', '.join(p.get('sessions_involved', []))}`")
+                    st.markdown("**Temporal Reasoning**")
+                    st.write(p.get("temporal_reasoning", ""))
+                    st.markdown("**Reasoning Trace**")
+                    st.write(p.get("reasoning_trace", ""))
+                    st.info(f"**Confidence justification:** {p.get('confidence_justification', '')}")
+
+            with st.expander("📄 Raw JSON output"):
+                st.json(patterns)
+
+            st.download_button(
+                "⬇️ Download patterns_output.json",
+                data=json.dumps(patterns, indent=2),
+                file_name="patterns_output.json",
+                mime="application/json"
+            )
+        else:
+            st.warning("No patterns extracted.")
