@@ -2,11 +2,17 @@ import json
 import os
 import time
 import streamlit as st
-from openai import OpenAI
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
+
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-MODEL = "gpt-4o"
+
+# Support both Streamlit Cloud secrets and local .env / environment variables
+_api_key = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=_api_key)
+
+MODEL = "gemini-2.5-flash"
 CHAT_TEMPERATURE = 0.4
 
 with open("askfirst_synthetic_dataset.json", "r") as f:
@@ -104,22 +110,19 @@ Return only a JSON array. No text outside the JSON."""
     full_response = ""
     for attempt in range(1, 4):
         full_response = ""
-        status_box.info(f"Attempt {attempt}/3 — streaming from OpenAI...")
+        status_box.info(f"Attempt {attempt}/3 — streaming from Gemini...")
         try:
-            with client.chat.completions.create(
+            for chunk in client.models.generate_content_stream(
                 model=MODEL,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2,
-                stream=True,
-            ) as stream:
-                for chunk in stream:
-                    delta = chunk.choices[0].delta.content
-                    if delta:
-                        full_response += delta
-                        trace_box.code(full_response[-3000:], language="json")
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.2,
+                ),
+            ):
+                if chunk.text:
+                    full_response += chunk.text
+                    trace_box.code(full_response[-3000:], language="json")
 
             patterns = parse_json(full_response)
             status_box.empty()
@@ -188,26 +191,30 @@ with tab_chat:
             st.markdown(user_input)
         st.session_state[history_key].append({"role": "user", "content": user_input})
 
-        # Build messages list for the API
+        # Build Gemini-format conversation history (role must be "user" or "model")
         system_content = CHAT_SYSTEM_PROMPT.format(context=build_user_context(user))
-        api_messages = [{"role": "system", "content": system_content}] + st.session_state[history_key]
+        gemini_contents = [
+            {"role": "user" if msg["role"] == "user" else "model",
+             "parts": [{"text": msg["content"]}]}
+            for msg in st.session_state[history_key]
+        ]
 
         # Stream the assistant response
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
             full_reply = ""
             try:
-                with client.chat.completions.create(
+                for chunk in client.models.generate_content_stream(
                     model=MODEL,
-                    messages=api_messages,
-                    temperature=CHAT_TEMPERATURE,
-                    stream=True,
-                ) as stream:
-                    for chunk in stream:
-                        delta = chunk.choices[0].delta.content if chunk.choices[0].delta else None
-                        if delta:
-                            full_reply += delta
-                            response_placeholder.markdown(full_reply + "▌")
+                    contents=gemini_contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_content,
+                        temperature=CHAT_TEMPERATURE,
+                    ),
+                ):
+                    if chunk.text:
+                        full_reply += chunk.text
+                        response_placeholder.markdown(full_reply + "▌")
                 response_placeholder.markdown(full_reply)
             except Exception as e:
                 full_reply = f"⚠️ Sorry, something went wrong: {e}"
