@@ -1,6 +1,6 @@
 # Ask First — Clary Pattern Detection
 
-> AI-powered cross-conversation health pattern detection with temporal causal reasoning, built on GPT-4o and Streamlit.
+> AI-powered cross-conversation health pattern detection with temporal causal reasoning, built on Gemini 2.5 Flash and Streamlit.
 
 ---
 
@@ -16,11 +16,11 @@ It doesn't just find correlations — it reasons about **causation through time*
 
 | Feature | Detail |
 |---|---|
-| 🧠 Temporal causal reasoning | GPT-4o reasons across timestamps, not just sequence |
+| 🧠 Temporal causal reasoning | Gemini 2.5 Flash reasons across timestamps, not just sequence |
 | 📡 Live streaming trace | Reasoning is streamed to the UI in real time before final output |
 | 🔎 8 hidden patterns | Detects delayed-onset, cyclical, compounding, and dose-response patterns |
 | 🎯 Confidence calibration | Auto-downgrades `high` → `medium` when fewer than 3 sessions support a pattern |
-| 🔁 Retry logic | JSON parse retried up to 3 times on malformed output |
+| 🔁 Retry logic | JSON parse retried up to 3× on malformed output |
 | ⬇️ Download output | One-click export of all detected patterns as `patterns_output.json` |
 
 ---
@@ -50,20 +50,42 @@ The app ships with a synthetic 3-user dataset covering ~3 months of health conve
 
 ---
 
-## Setup
+## Deploy on Streamlit Cloud
+
+### 1. Fork / push the repo to GitHub
+
+### 2. Create a new app on [share.streamlit.io](https://share.streamlit.io)
+
+Point it at `app.py` in your repository.
+
+### 3. Add your Gemini API key as a secret
+
+In the Streamlit Cloud dashboard → **Settings → Secrets**, add:
+
+```toml
+GEMINI_API_KEY = "your_gemini_api_key_here"
+```
+
+Get a free Gemini API key at [aistudio.google.com](https://aistudio.google.com).
+
+That's it — Streamlit Cloud reads `requirements.txt` automatically and installs all dependencies.
+
+---
+
+## Local Setup
 
 ### 1. Install dependencies
 
 ```bash
-pip install openai streamlit python-dotenv
+pip install -r requirements.txt
 ```
 
-### 2. Add your OpenAI API key
+### 2. Add your Gemini API key
 
 Create a `.env` file in the project root:
 
 ```
-OPENAI_API_KEY=your_key_here
+GEMINI_API_KEY=your_key_here
 ```
 
 ### 3. Run the app
@@ -87,7 +109,7 @@ Synthetic Dataset (JSON)
 build_user_context()   ← Formats full 3-month session history with timestamps
         │
         ▼
-GPT-4o (streaming)     ← Single-shot call with full history + temporal reasoning prompt
+Gemini 2.5 Flash (streaming)  ← Single-shot call with full history + temporal reasoning prompt
         │
         ▼
 parse_json()           ← Extracts JSON array, retries up to 3× on parse failure
@@ -143,12 +165,13 @@ See [`one_page_writeup.md`](one_page_writeup.md) for a full analysis of failure 
 
 ```
 ├── app.py                          # Main Streamlit app
+├── requirements.txt                # Python dependencies (for Streamlit Cloud)
 ├── askfirst_synthetic_dataset.json # Synthetic 3-user health dataset
 ├── one_page_writeup.md             # Reasoning approach & known failure modes
 ├── arjun.png                       # Screenshot — USR001
 ├── meera.png                       # Screenshot — USR002
 ├── priya.png                       # Screenshot — USR003
-├── .env                            # API key (not committed)
+├── .env                            # API key for local dev (not committed)
 ├── .gitignore
 └── README.md
 ```
@@ -157,4 +180,5 @@ See [`one_page_writeup.md`](one_page_writeup.md) for a full analysis of failure 
 
 ## Model
 
-**GPT-4o** — chosen for strong structured JSON output, large context window (fits 3 months of conversation history comfortably), and native token streaming support.
+**Gemini 2.5 Flash** — Google's latest fast model with a large context window (fits 3 months of conversation history comfortably), native token streaming, and strong structured JSON output. Uses the official [Google Gen AI Python SDK](https://github.com/googleapis/python-genai) (`google-genai`).
+
